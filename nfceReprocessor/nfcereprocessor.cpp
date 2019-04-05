@@ -11,18 +11,30 @@
 #include <QDebug>
 
 //this numbers(nnf and seqCode) should to be initilialized with client receipt
-NfceReprocessor::NfceReprocessor(QObject *parent) : QObject(parent), m_nnf(999000052),
+NfceReprocessor::NfceReprocessor(QObject *parent) : QObject(parent), m_nnf(999000001),
     m_seqCode(1)
 {
 
 }
 
-void NfceReprocessor::process(uint transactionId, uint nnf, uint seqCode)
+void NfceReprocessor::process(uint transactionId, uint nnf, uint seqCode, bool useLocalNumber)
 {
-    QDomDocument xml = generateXml(transactionId, nnf, seqCode);
-    contingency(transactionId, xml, nnf, seqCode);
-//    m_nnf++;
-//    m_seqCode++;
+
+    uint _nnf;
+    uint _seqCode;
+    if(useLocalNumber){
+        _nnf = m_nnf;
+        _seqCode = m_seqCode;
+    }else {
+        _nnf = nnf;
+        _seqCode = seqCode;
+    }
+    qDebug() << transactionId << _nnf << _seqCode;
+    QDomDocument xml = generateXml(transactionId, _nnf, _seqCode);
+    contingency(transactionId, xml, _nnf, _seqCode);
+
+    m_nnf++;
+    m_seqCode++;
 }
 
 void NfceReprocessor::contingency(uint transactionId, QDomDocument xml, uint nnf, uint seqCode)
@@ -70,14 +82,24 @@ void NfceReprocessor::contingency(uint transactionId, QDomDocument xml, uint nnf
     QUrlQuery urlQueryParams;
     urlQueryParams.addQueryItem("chNFe", chave);
     urlQueryParams.addQueryItem("nVersao", "100");
-    QString tpAmp = xml.firstChildElement("tbAmp").childNodes().at(0).nodeValue();
-    urlQueryParams.addQueryItem("tpAmb", tpAmp);
-    QString dhEmi = xml.firstChildElement("dhEmi").childNodes().at(0).nodeValue();
+
+    QDomElement tpAmb = xml.elementsByTagName("tbAmp").at(0).toElement();
+    QString tpAmp = tpAmb.childNodes().at(0).nodeValue();
+    urlQueryParams.addQueryItem("tpAmb", "1");
+
+    QDomElement dh = xml.elementsByTagName("dhEmi").at(0).toElement();
+    QString dhEmi = dh.childNodes().at(0).nodeValue();    
     urlQueryParams.addQueryItem("dhEmi", dhEmi.toLatin1().toHex());
-    QString vNF = xml.firstChildElement("vNF").childNodes().at(0).nodeValue();
+
+    QDomElement nf = xml.elementsByTagName("vNF").at(0).toElement();
+    QString vNF = nf.childNodes().at(0).nodeValue();
     urlQueryParams.addQueryItem("vNF", vNF);
-    QString vICMS = xml.firstChildElement("vICMS").childNodes().at(0).nodeValue();
+
+    QDomElement icms = xml.elementsByTagName("vICMS").at(0).toElement();
+    QString vICMS = icms.childNodes().at(0).nodeValue();
     urlQueryParams.addQueryItem("vICMS", vICMS);
+
+
     urlQueryParams.addQueryItem("digVal", digestValue.toHex());
     urlQueryParams.addQueryItem("cIdToken", enterpriseInfo("token_sefaz"));
 
@@ -309,15 +331,19 @@ QDomDocument NfceReprocessor::generateXml(uint transactionId, uint nnf, uint seq
         createElement("uCom", prodQuery.value("unidade_medida_fiscal").toString(), prod);
         createElement("qCom", QString::number(prodQuery.value("quantidade").toDouble(), 'f', 4), prod);
         createElement("vUnCom", QString::number(prodQuery.value("preco_unitario").toDouble(), 'f', 2), prod);
-        createElement("vProd", QString::number(prodQuery.value("valor_venda").toDouble(), 'f', 2), prod);
-        totalValue += prodQuery.value("valor_venda").toDouble();
+        createElement("vProd", QString::number(prodQuery.value("preco_unitario").toDouble() * prodQuery.value("quantidade").toDouble(), 'f', 2), prod);
+        totalValue += prodQuery.value("preco_unitario").toDouble() * prodQuery.value("quantidade").toDouble();
+        prodQuery.size();
         QString cEANTrib = prodQuery.value("ean").toString();
 
         createElement("cEANTrib", cEANTrib.isEmpty() ? "SEM GTIN" : cEANTrib, prod);
 
         createElement("uTrib", prodQuery.value("unidade_medida_fiscal").toString(), prod);
         createElement("qTrib", QString::number(prodQuery.value("quantidade").toDouble(), 'f', 4), prod);
-        createElement("vUnTrib",  QString::number(prodQuery.value("preco_unitario").toDouble(), 'f', 2), prod);
+        createElement("vUnTrib",  QString::number(prodQuery.value("preco_unitario").toDouble(), 'f', 2), prod);        
+        if(prodQuery.value("valor_desconto").toDouble() > 0.0){
+            createElement("vDesc", QString::number(prodQuery.value("valor_desconto").toDouble(), 'f', 2), prod);
+        }
         createElement("indTot", "1", prod);
 
         QDomElement imposto = createElement("imposto", "", det);
@@ -369,7 +395,8 @@ QDomDocument NfceReprocessor::generateXml(uint transactionId, uint nnf, uint seq
     createElement("vProd", QString::number(totalValue, 'f', 2), icmsTot);
     createElement("vFrete", "0", icmsTot);
     createElement("vSeg", "0", icmsTot);
-    createElement("vDesc", "0", icmsTot);
+    QString desc = QString::number(vendaQuery.value("valor_desconto").toDouble(),'f',2);
+    createElement("vDesc", vendaQuery.value("valor_desconto").toString().isEmpty() ? "0" : desc , icmsTot);
     createElement("vII", "0", icmsTot);
     createElement("vIPI", "0", icmsTot);
     createElement("vIPIDevol", "0", icmsTot);
@@ -378,7 +405,7 @@ QDomDocument NfceReprocessor::generateXml(uint transactionId, uint nnf, uint seq
     createElement("vOutro", "0", icmsTot);
     //TODO: Fazer isso virar uma consulta
 //    createElement("vNF", QString::number(saleRecord.value("valor_total").toDouble(), 'f', 2), icmsTot);
-    createElement("vNF", QString::number(totalValue, 'f', 2), icmsTot);
+    createElement("vNF", QString::number(totalValue - vendaQuery.value("valor_desconto").toDouble(), 'f', 2), icmsTot);
     //TODO: Fazer isso virar uma consulta
     if(tribSum > 0)
         createElement("vTotTrib", QString::number(tribSum, 'f', 2), icmsTot);    

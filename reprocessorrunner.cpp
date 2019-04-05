@@ -11,10 +11,11 @@ ReprocessorRunner::ReprocessorRunner(QObject *parent) : QObject(parent),
       to do this, its necessary a
       list with transactions to be reprocessed,
       and databases(vf_cad and vf_mov in /data directory,
-      located in same path of .exe)
+      this path must to be located in same path of .exe)
     **/
-    m_transactionsList = {
-        qMakePair(369 ,qMakePair(999000160,10))
+    m_transactionsList = {       
+    };
+    m_transactionsAndNnfList = {        
     };
 }
 #include <QProcess>
@@ -25,10 +26,15 @@ void ReprocessorRunner::run()
     *connection = connect(DatabaseManager::instance(), &DatabaseManager::connectionRefreshed, this, [&, connection](){
         DatabaseManager::instance()->disconnect(*connection);
         if(DatabaseManager::instance()->isConnected()){
-            for (auto pair : m_transactionsList) {
-                //TODO: do it for MFE and SAT
-                qDebug() << "doc: " << pair.first << " nnf: " << pair.second.first << " seq:" << pair.second.second;
-                runNfce(pair.first, pair.second.first, pair.second.second);
+             //TODO: do it for MFE and SAT
+            if(!m_transactionsList.isEmpty()){
+                for (auto pair : m_transactionsList) {
+                    runNfce(pair, true);
+                }
+            }else {                
+                for (auto pair : m_transactionsAndNnfList) {
+                    runNfce(pair.first, false ,pair.second.first, pair.second.second);
+                }
             }
             qDebug() << "fim da aplicação";
         }
@@ -55,7 +61,7 @@ ReprocessorRunner::FiscalEmiterInterface ReprocessorRunner::fiscalType()
     return FiscalEmiterInterface::Nfce;
 }
 
-void ReprocessorRunner::runNfce(uint transactionId, uint nnf, uint seqCode)
+void ReprocessorRunner::runNfce(uint transactionId, bool useLocalNumber, uint nnf, uint seqCode)
 {
-    m_nfce->process(transactionId, nnf, seqCode);
+    m_nfce->process(transactionId, nnf, seqCode, useLocalNumber);
 }

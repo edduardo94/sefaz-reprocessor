@@ -12,7 +12,7 @@ class NfceReprocessor : public QObject
 public:
     explicit NfceReprocessor(QObject *parent = nullptr);
 
-    void process(uint transactionId, uint nnf, uint seqCode);
+    void process(uint transactionId, uint nnf, uint seqCode, bool useLocalNumber);
 
 private:
     QDomDocument generateXml(uint transactionId, uint nnf, uint seqCode);
@@ -26,7 +26,7 @@ private:
     QString deviceInfo(QString value);
     QString enterpriseInfo(QString value);
     QString tPag(QSqlRecord itemFin);
-    static const QString removeAccents(QString s);
+    const QString removeAccents(QString s);
 
     uint m_nnf;
     uint m_seqCode;
